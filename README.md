@@ -31,7 +31,7 @@ pip install [package-name]
 
 ### Command Line
 ```bash
-python main.py [arguments]
+python erosion.py
 ```
 
 ## Requirements
@@ -41,7 +41,7 @@ python main.py [arguments]
 
 ## Examples files
 Example files are located in the `examples/` directory. You can run the scripts with these files to see how they work.
-- Example 1 : `examples/HorseHead.fits` (Black and whiteFITS image file for testing)
+- Example 1 : `examples/HorseHead.fits` (Black and white FITS image file for testing)
 - Example 2 : `examples/test_M31_linear.fits` (Color FITS image file for testing)
 - Example 3 : `examples/test_M31_raw.fits` (Color FITS image file for testing)
 

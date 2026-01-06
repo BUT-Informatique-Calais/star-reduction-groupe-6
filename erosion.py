@@ -4,7 +4,7 @@ import cv2 as cv
 import numpy as np
 
 # Open and read the FITS file
-fits_file = './examples/HorseHead.fits'
+fits_file = './examples/test_M31_linear.fits'
 hdul = fits.open(fits_file)
 
 # Display information about the file
@@ -42,14 +42,35 @@ else:
     image = ((data - data.min()) / (data.max() - data.min()) * 255).astype('uint8')
 
 
+# Define kernels and apply erosion
+kernel_3x3 = np.ones((3,3), np.uint8)
+eroded_3x3_iter1 = cv.erode(image, kernel_3x3, iterations=1)
+eroded_3x3_iter3 = cv.erode(image, kernel_3x3, iterations=3)
 
-# Define a kernel for erosion
-kernel = np.ones((3,3), np.uint8)
-# Perform erosion
-eroded_image = cv.erode(image, kernel, iterations=1)
+kernel_5x5 = np.ones((5,5), np.uint8)
+eroded_5x5_iter1 = cv.erode(image, kernel_5x5, iterations=1)
+eroded_5x5_iter3 = cv.erode(image, kernel_5x5, iterations=3)
 
-# Save the eroded image 
-cv.imwrite('./results/eroded.png', eroded_image)
+kernel_7x7 = np.ones((7,7), np.uint8)
+eroded_7x7_iter1 = cv.erode(image, kernel_7x7, iterations=1)
+eroded_7x7_iter3 = cv.erode(image, kernel_7x7, iterations=3)
+# Save eroded images
+if data.ndim == 3:  
+    # Color images
+    plt.imsave('./results/eroded_3x3_iter1.png', eroded_3x3_iter1)
+    plt.imsave('./results/eroded_3x3_iter3.png', eroded_3x3_iter3)
+    plt.imsave('./results/eroded_5x5_iter1.png', eroded_5x5_iter1)
+    plt.imsave('./results/eroded_5x5_iter3.png', eroded_5x5_iter3)
+    plt.imsave('./results/eroded_7x7_iter1.png', eroded_7x7_iter1)
+    plt.imsave('./results/eroded_7x7_iter3.png', eroded_7x7_iter3)
+else:  
+    # Monochrome images
+    plt.imsave('./results/eroded_3x3_iter1.png', eroded_3x3_iter1, cmap='gray')
+    plt.imsave('./results/eroded_3x3_iter3.png', eroded_3x3_iter3, cmap='gray')
+    plt.imsave('./results/eroded_5x5_iter1.png', eroded_5x5_iter1, cmap='gray')
+    plt.imsave('./results/eroded_5x5_iter3.png', eroded_5x5_iter3, cmap='gray')
+    plt.imsave('./results/eroded_7x7_iter1.png', eroded_7x7_iter1, cmap='gray')
+    plt.imsave('./results/eroded_7x7_iter3.png', eroded_7x7_iter3, cmap='gray')
 
-# Close the file
+# Close the FITS file
 hdul.close()
