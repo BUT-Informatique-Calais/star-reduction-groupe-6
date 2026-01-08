@@ -4,7 +4,7 @@ import cv2 as cv
 import numpy as np
 
 # Open and read the FITS file
-fits_file = './examples/test_M31_linear.fits'
+fits_file = '../examples/test_M31_linear.fits'
 hdul = fits.open(fits_file)
 
 # Display information about the file
