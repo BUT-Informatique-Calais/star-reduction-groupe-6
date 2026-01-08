@@ -29,29 +29,31 @@ if data.ndim == 3:
     # Save the data as a png image (no cmap for color images)
     plt.imsave('./results/original.png', data_normalized)
     
-    # Normalize each channel separately to [0, 255] for OpenCV
-    image = np.zeros_like(data, dtype='uint8')
+    # Normalize each channel separately to [0, 1] using float64
+    image = np.zeros_like(data, dtype=np.float64)
     for i in range(data.shape[2]):
         channel = data[:, :, i]
-        image[:, :, i] = ((channel - channel.min()) / (channel.max() - channel.min()) * 255).astype('uint8')
+        image[:, :, i] = ((channel - channel.min()) / (channel.max() - channel.min())).astype(np.float64)
 else:
     # Monochrome image
-    plt.imsave('./results/original.png', data, cmap='gray')
+    # Normalize to [0, 1] using float64
+    data_normalized = (data - data.min()) / (data.max() - data.min())
+    plt.imsave('./results/original.png', data_normalized, cmap='gray')
     
-    # Convert to uint8 for OpenCV
-    image = ((data - data.min()) / (data.max() - data.min()) * 255).astype('uint8')
+    # Use float64 for maximum precision
+    image = data_normalized.astype(np.float64)
 
 
 # Define kernels and apply erosion
-kernel_3x3 = np.ones((3,3), np.uint8)
+kernel_3x3 = np.ones((3,3), np.float64)
 eroded_3x3_iter1 = cv.erode(image, kernel_3x3, iterations=1)
 eroded_3x3_iter3 = cv.erode(image, kernel_3x3, iterations=3)
 
-kernel_5x5 = np.ones((5,5), np.uint8)
+kernel_5x5 = np.ones((5,5), np.float64)
 eroded_5x5_iter1 = cv.erode(image, kernel_5x5, iterations=1)
 eroded_5x5_iter3 = cv.erode(image, kernel_5x5, iterations=3)
 
-kernel_7x7 = np.ones((7,7), np.uint8)
+kernel_7x7 = np.ones((7,7), np.float64)
 eroded_7x7_iter1 = cv.erode(image, kernel_7x7, iterations=1)
 eroded_7x7_iter3 = cv.erode(image, kernel_7x7, iterations=3)
 # Save eroded images
