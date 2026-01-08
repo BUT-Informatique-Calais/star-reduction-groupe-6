@@ -5,10 +5,8 @@ import matplotlib.pyplot as plt
 import cv2 as cv
 import numpy as np
 
-# ===== PHASE 2: SELECTIVE STAR REDUCTION =====
-
 # Load the FITS file
-fits_file = './examples/test_M31_linear.fits'
+fits_file = '../examples/test_M31_linear.fits'
 hdul = fits.open(fits_file)
 
 print(f"Processing: {fits_file}")
@@ -32,16 +30,12 @@ data_normalized = (data_gray - data_gray.min()) / (data_gray.max() - data_gray.m
 image_original = (data_normalized * 255).astype('uint8')
 
 # Save original
-plt.imsave('./results/phase2_original.png', data_normalized, cmap='gray')
-
-# ===== STEP A: CREATE STAR MASK =====
-
-print("\nStep A: Detecting stars...")
+plt.imsave('./results/image_original.png', data_normalized, cmap='gray')
 
 # Calculate background statistics
 mean, median, std = sigma_clipped_stats(data_gray, sigma=3.0)
 
-print(f"Background: mean={mean:.2f}, median={median:.2f}, std={std:.2f}")
+print(f"Fond du ciel: moyenne={mean:.2f}, médiane={median:.2f}, écart-type={std:.2f}")
 
 # Try different threshold if no stars detected
 threshold_multiplier = 3.0
@@ -50,14 +44,14 @@ sources = daofind(data_gray - median)
 
 # If no stars found, try with lower threshold
 if sources is None:
-    print("No stars with threshold=3*std, trying threshold=2*std...")
+    print("Aucune étoile avec seuil=3*std, essai avec seuil=2*std...")
     threshold_multiplier = 2.0
     daofind = DAOStarFinder(fwhm=3.0, threshold=threshold_multiplier*std)
     sources = daofind(data_gray - median)
 
 # If still no stars, use simple thresholding
 if sources is None:
-    print("No stars with DAOStarFinder, using adaptive thresholding...")
+    print("Aucune étoile avec DAOStarFinder, utilisation du seuillage adaptatif...")
     # Use percentile-based thresholding
     threshold_value = np.percentile(data_gray, 99.5)
     mask_temp = (data_gray > threshold_value).astype(np.uint8)
@@ -73,7 +67,7 @@ if sources is None:
             x_center = int(np.mean(coords[1]))
             sources.append({'xcentroid': x_center, 'ycentroid': y_center})
 
-print(f"Number of stars detected: {len(sources) if sources is not None else 0}")
+print(f"Nombre d'étoiles détectées: {len(sources) if sources is not None else 0}")
 
 # Create binary star mask
 mask = np.zeros_like(data_gray, dtype=np.float32)
@@ -82,31 +76,27 @@ if sources is not None:
     for source in sources:
         x, y = int(source['xcentroid']), int(source['ycentroid'])
         # Draw a circle around each star
-        cv.circle(mask, (x, y), radius=8, color=1.0, thickness=-1)
+        cv.circle(mask, (x, y), radius=5, color=1.0, thickness=-1)
 
 # Save binary mask
-plt.imsave('./results/phase2_mask_binary.png', mask, cmap='gray')
+plt.imsave('./results/masque_etoile.png', mask, cmap='gray')
 
 # Apply Gaussian blur to soften mask edges
-mask_blurred = cv.GaussianBlur(mask, (15, 15), 5)
+mask_blurred = cv.GaussianBlur(mask, (7, 7), 2)
 
 # Normalize mask to [0, 1]
 if mask_blurred.max() > 0:
     mask_blurred = mask_blurred / mask_blurred.max()
 
 # Save blurred mask
-plt.imsave('./results/phase2_mask_blurred.png', mask_blurred, cmap='gray')
-
-# ===== STEP B: LOCALIZED REDUCTION =====
-
-print("\nStep B: Applying selective erosion...")
+plt.imsave('./results/masque_flou.png', mask_blurred, cmap='gray')
 
 # Apply erosion to the entire image
 kernel = np.ones((5, 5), np.uint8)
 image_eroded = cv.erode(image_original, kernel, iterations=2)
 
 # Save eroded image
-plt.imsave('./results/phase2_eroded.png', image_eroded, cmap='gray')
+plt.imsave('./results/image_erodee.png', image_eroded, cmap='gray')
 
 # Combine using mask: I_final = M × I_erode + (1-M) × I_original
 # Convert to float for calculation
@@ -118,52 +108,32 @@ image_final = (mask_blurred * image_eroded_f) + ((1 - mask_blurred) * image_orig
 image_final = image_final.astype(np.uint8)
 
 # Save final result
-plt.imsave('./results/phase2_final.png', image_final, cmap='gray')
-
-# ===== VISUALIZATION =====
+plt.imsave('./results/image_finale.png', image_final, cmap='gray')
 
 # Create comparison figure
-fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-fig.suptitle('Phase 2: Selective Star Reduction', fontsize=16)
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
 axes[0, 0].imshow(image_original, cmap='gray')
-axes[0, 0].set_title('Original')
+axes[0, 0].set_title('Image Originale')
 axes[0, 0].axis('off')
 
 axes[0, 1].imshow(mask, cmap='gray')
-axes[0, 1].set_title('Binary Mask')
+axes[0, 1].set_title('Masque Binaire')
 axes[0, 1].axis('off')
 
-axes[0, 2].imshow(mask_blurred, cmap='gray')
-axes[0, 2].set_title('Blurred Mask')
-axes[0, 2].axis('off')
-
 axes[1, 0].imshow(image_eroded, cmap='gray')
-axes[1, 0].set_title('Eroded Image')
+axes[1, 0].set_title('Image Érodée')
 axes[1, 0].axis('off')
 
 axes[1, 1].imshow(image_final, cmap='gray')
-axes[1, 1].set_title('Final Result')
+axes[1, 1].set_title('Résultat Final')
 axes[1, 1].axis('off')
-
-# Difference image
-diff = np.abs(image_original.astype(np.float32) - image_final.astype(np.float32))
-axes[1, 2].imshow(diff, cmap='hot')
-axes[1, 2].set_title('Difference (Original - Final)')
-axes[1, 2].axis('off')
 
 plt.tight_layout()
 plt.savefig('./results/phase2_comparison.png', dpi=150, bbox_inches='tight')
 plt.close()
 
-print("\nResults saved in ./results/:")
-print("  - phase2_original.png")
-print("  - phase2_mask_binary.png")
-print("  - phase2_mask_blurred.png")
-print("  - phase2_eroded.png")
-print("  - phase2_final.png")
-print("  - phase2_comparison.png")
-print("\n✓ Phase 2 complete - Ready for teacher validation")
+print("\nRésultats sauvegardés dans ./results/:")
 
 # Close FITS file
 hdul.close()
