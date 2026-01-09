@@ -12,16 +12,16 @@ import os
 
 
 class StarReductionApp:
-    """Application de réduction interactive des étoiles"""
+    # Application pour réduire les étoiles de manière interactive
     
     def __init__(self, root):
         self.root = root
         self.root.title("Phase 3: Réduction Interactive des Étoiles")
         self.root.geometry("1400x900")
         
-        # Données
+        # Variables pour les images
         self.data_gray = None
-        self.data_original_color = None  # Pour garder la version couleur
+        self.data_original_color = None  
         self.image_original = None
         self.image_final = None
         self.mean = 0
@@ -29,13 +29,18 @@ class StarReductionApp:
         self.std = 0
         self.sources = None
         
-        # Paramètres par défaut (simplifiés et plus doux)
+        # Paramètres par défaut
         self.threshold_multiplier = 3.0
         self.star_radius = 3
         self.gaussian_size = 5
         self.gaussian_sigma = 1
         self.erosion_kernel = 3
         self.erosion_iterations = 1
+        
+        # Pour le clignotement
+        self.blink_active = False
+        self.blink_timer = None
+        self.show_original = True
         
         self.create_interface()
     
@@ -44,11 +49,11 @@ class StarReductionApp:
         left_frame = ttk.Frame(self.root, width=300)
         left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
         
-        # Titre
+        # Titre en haut
         title = ttk.Label(left_frame, text="Réduction Interactive", font=('Arial', 14, 'bold'))
         title.pack(pady=10)
         
-        # Bouton charger
+        # Bouton pour charger le fichier FITS
         ttk.Button(left_frame, text="Charger FITS", command=self.load_fits).pack(pady=5, fill=tk.X)
         
         ttk.Separator(left_frame, orient='horizontal').pack(fill=tk.X, pady=10)
@@ -59,24 +64,54 @@ class StarReductionApp:
         
         self.sliders = {}
         
-        # Rayon étoiles (plus petit par défaut)
+        # Seuil de détection
+        self.add_slider(params_frame, "Seuil détection (×σ)", 'threshold_multiplier', 1.0, 5.0, 3.0)
+        
+        # Rayon étoiles
         self.add_slider(params_frame, "Rayon étoiles (px)", 'star_radius', 2, 12, 3)
         
-        # Flou du masque (plus doux par défaut)
-        self.add_slider(params_frame, "Flou du masque", 'gaussian_size', 3, 15, 5)
+        # Flou gaussien taille
+        self.add_slider(params_frame, "Flou gaussien (taille)", 'gaussian_size', 3, 15, 5)
         
-        # Force de l'érosion (gardé à 1)
-        self.add_slider(params_frame, "Force de l'érosion", 'erosion_iterations', 1, 3, 1)
+        # Flou gaussien sigma
+        self.add_slider(params_frame, "Flou gaussien (σ)", 'gaussian_sigma', 1, 10, 1)
+        
+        # Kernel érosion
+        self.add_slider(params_frame, "Kernel érosion", 'erosion_kernel', 3, 9, 3)
+        
+        # Itérations érosion
+        self.add_slider(params_frame, "Itérations érosion", 'erosion_iterations', 1, 3, 1)
         
         # Bouton appliquer
         ttk.Button(left_frame, text="Appliquer", command=self.apply_processing).pack(pady=10, fill=tk.X)
         
+        ttk.Separator(left_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
+        # Section Comparateur
+        comp_frame = ttk.LabelFrame(left_frame, text="Comparateur Avant/Après", padding=10)
+        comp_frame.pack(fill=tk.X, pady=5)
+        
+        # Bouton clignotement
+        self.blink_button = ttk.Button(comp_frame, text="▶ Clignotement", command=self.toggle_blink)
+        self.blink_button.pack(pady=5, fill=tk.X)
+        
+        # Slider de fondu
+        ttk.Label(comp_frame, text="Fondu (0%=original, 100%=résultat)").pack(pady=(10,0))
+        self.blend_var = tk.DoubleVar(value=100)
+        self.blend_slider = ttk.Scale(comp_frame, from_=0, to=100, orient=tk.HORIZONTAL, 
+                                      variable=self.blend_var, command=self.update_blend)
+        self.blend_slider.pack(fill=tk.X, pady=5)
+        
+        # Checkbox différence
+        self.show_diff_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(comp_frame, text="Afficher différence", 
+                       variable=self.show_diff_var, command=self.update_display).pack(pady=5)
+        
+        ttk.Separator(left_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        
         # Info
         self.info_label = ttk.Label(left_frame, text="Chargez une image FITS", wraplength=280)
         self.info_label.pack(pady=10)
-        
-        # Bouton sauvegarder
-        ttk.Button(left_frame, text="Sauvegarder", command=self.save_result).pack(pady=5, fill=tk.X)
         
         # Frame droite: visualisation
         right_frame = ttk.Frame(self.root)
@@ -95,7 +130,7 @@ class StarReductionApp:
         self.ax_final.axis('off')
     
     def add_slider(self, parent, label, param_name, from_, to, default):
-        """Ajoute un slider"""
+        # Crée un slider avec son label
         frame = ttk.Frame(parent)
         frame.pack(fill=tk.X, pady=5)
         
@@ -115,7 +150,7 @@ class StarReductionApp:
         self.sliders[param_name] = var
     
     def load_fits(self):
-        """Charge un fichier FITS"""
+        # Charger un fichier FITS
         filepath = filedialog.askopenfilename(
             title="Sélectionner un fichier FITS",
             filetypes=[("FITS files", "*.fits"), ("All files", "*.*")],
@@ -129,19 +164,22 @@ class StarReductionApp:
             hdul = fits.open(filepath)
             data = hdul[0].data
             
-            # Traiter les images couleur
+            # Gestion des images couleur vs monochrome
             if data.ndim == 3:
                 if data.shape[0] == 3:
                     data = np.transpose(data, (1, 2, 0))
                 self.data_gray = np.mean(data, axis=2)
                 # Garder la version couleur
-                self.data_original_color = (data - data.min()) / (data.max() - data.min())
+                data_min, data_max = data.min(), data.max()
+                self.data_original_color = (data - data_min) / (data_max - data_min)
             else:
                 self.data_gray = data.copy()
                 self.data_original_color = None
             
             # Normaliser en float64
-            data_normalized = (self.data_gray - self.data_gray.min()) / (self.data_gray.max() - self.data_gray.min())
+            gmin = self.data_gray.min()
+            gmax = self.data_gray.max()
+            data_normalized = (self.data_gray - gmin) / (gmax - gmin)
             self.image_original = data_normalized.astype(np.float64)
             
             # Statistiques du fond
@@ -154,10 +192,11 @@ class StarReductionApp:
             
             # Afficher
             filename = os.path.basename(filepath)
+            nb_etoiles = len(self.sources) if self.sources else 0
             self.info_label.config(
                 text=f"✓ {filename}\n"
                      f"Dimensions: {self.image_original.shape}\n"
-                     f"Étoiles: {len(self.sources) if self.sources else 0}\n"
+                     f"Étoiles: {nb_etoiles}\n"
                      f"Fond: μ={self.mean:.3f}, σ={self.std:.3f}"
             )
             
@@ -167,13 +206,13 @@ class StarReductionApp:
             messagebox.showerror("Erreur", f"Impossible de charger:\n{str(e)}")
     
     def detect_stars(self):
-        """Détecte les étoiles"""
+        # Détection des étoiles avec DAOStarFinder
         threshold = self.threshold_multiplier * self.std
         daofind = DAOStarFinder(fwhm=3.0, threshold=threshold)
         self.sources = daofind(self.data_gray - self.median)
         
         if self.sources is None:
-            # Fallback
+            # Si ça marche pas, on utilise un seuillage simple
             threshold_value = np.percentile(self.data_gray, 99.5)
             mask_temp = (self.data_gray > threshold_value).astype(np.uint8)
             num_labels, labels = cv.connectedComponents(mask_temp)
@@ -187,54 +226,127 @@ class StarReductionApp:
                     self.sources.append({'xcentroid': x_center, 'ycentroid': y_center})
     
     def apply_processing(self):
-        """Applique le traitement avec les paramètres actuels"""
+        # Applique le traitement avec les paramètres
         if self.image_original is None:
             messagebox.showwarning("Attention", "Chargez d'abord une image")
             return
         
-        # Récupérer les paramètres essentiels
+        # Récup les valeurs des sliders
+        self.threshold_multiplier = self.sliders['threshold_multiplier'].get()
         self.star_radius = int(self.sliders['star_radius'].get())
         self.gaussian_size = int(self.sliders['gaussian_size'].get())
+        self.gaussian_sigma = int(self.sliders['gaussian_sigma'].get())
+        self.erosion_kernel = int(self.sliders['erosion_kernel'].get())
         self.erosion_iterations = int(self.sliders['erosion_iterations'].get())
         
-        # Redétecter les étoiles
+        # Redetecter les étoiles
         self.detect_stars()
         
-        # Créer le masque
+        # Création du masque
         mask = np.zeros_like(self.data_gray, dtype=np.float64)
         
         if self.sources is not None:
             for source in self.sources:
-                x, y = int(source['xcentroid']), int(source['ycentroid'])
+                x = int(source['xcentroid'])
+                y = int(source['ycentroid'])
                 cv.circle(mask, (x, y), radius=self.star_radius, color=1.0, thickness=-1)
         
-        # Flou gaussien
+        # Appliquer le flou
         gsize = self.gaussian_size
         if gsize % 2 == 0:
             gsize += 1
-        mask_blurred = cv.GaussianBlur(mask, (gsize, gsize), 1)  # Sigma réduit à 1
+        mask_blur = cv.GaussianBlur(mask, (gsize, gsize), self.gaussian_sigma)
         
-        if mask_blurred.max() > 0:
-            mask_blurred = mask_blurred / mask_blurred.max()
+        if mask_blur.max() > 0:
+            mask_blur = mask_blur / mask_blur.max()
         
         # Érosion
         kernel = np.ones((self.erosion_kernel, self.erosion_kernel), np.float64)
         image_eroded = cv.erode(self.image_original, kernel, iterations=self.erosion_iterations)
         
         # Combiner: I_final = M × I_erode + (1-M) × I_original
-        self.image_final = (mask_blurred * image_eroded) + ((1 - mask_blurred) * self.image_original)
+        self.image_final = (mask_blur * image_eroded) + ((1 - mask_blur) * self.image_original)
         
-        # Si image couleur, appliquer le masque à chaque canal
+        # Si image couleur, appliquer à chaque canal
         if self.data_original_color is not None:
             self.image_final_display = np.zeros_like(self.data_original_color)
             for i in range(3):
-                channel_original = self.data_original_color[:, :, i]
-                channel_eroded = cv.erode(channel_original, kernel, iterations=self.erosion_iterations)
-                self.image_final_display[:, :, i] = (mask_blurred * channel_eroded) + ((1 - mask_blurred) * channel_original)
+                channel_orig = self.data_original_color[:, :, i]
+                channel_erod = cv.erode(channel_orig, kernel, iterations=self.erosion_iterations)
+                self.image_final_display[:, :, i] = (mask_blur * channel_erod) + ((1 - mask_blur) * channel_orig)
         else:
             self.image_final_display = self.image_final
         
         # Afficher
+        self.update_display()
+    
+    
+    def toggle_blink(self):
+        """Active/désactive le clignotement"""
+        self.blink_active = not self.blink_active
+        
+        if self.blink_active:
+            self.blink_button.config(text="⏸ Arrêter")
+            self.blend_slider.config(state='disabled')
+            self.do_blink()
+        else:
+            self.blink_button.config(text="▶ Clignotement")
+            self.blend_slider.config(state='normal')
+            if self.blink_timer:
+                self.root.after_cancel(self.blink_timer)
+            # Recréer les axes normaux
+            self.fig.clear()
+            self.ax_original, self.ax_final = self.fig.subplots(1, 2)
+            self.update_display()
+    
+    def do_blink(self):
+        """Effectue le clignotement"""
+        if not self.blink_active or self.image_final is None:
+            return
+        
+        self.show_original = not self.show_original
+        
+        # Effacer la figure complètement et créer un seul axe centré
+        self.fig.clear()
+        ax = self.fig.add_subplot(111)
+        
+        # Sélectionner l'image à afficher
+        if self.show_original:
+            if self.data_original_color is not None:
+                img = self.data_original_color
+            else:
+                img = self.image_original
+            title = 'IMAGE ORIGINALE'
+            color = 'blue'
+        else:
+            if self.data_original_color is not None:
+                img = self.image_final_display
+            else:
+                img = self.image_final
+            num_stars = len(self.sources) if self.sources else 0
+            title = f'IMAGE TRAITÉE ({num_stars} étoiles réduites)'
+            color = 'green'
+        
+        # Afficher l'image centrée
+        if self.data_original_color is not None:
+            ax.imshow(img)
+        else:
+            ax.imshow(img, cmap='gray')
+        
+        ax.set_title(title, color=color, weight='bold', fontsize=16)
+        ax.axis('off')
+        
+        self.fig.tight_layout()
+        self.canvas.draw()
+        
+        # Rappeler après 500ms
+        self.blink_timer = self.root.after(500, self.do_blink)
+    
+    def update_blend(self, value=None):
+        """Met à jour le fondu"""
+        if self.image_final is None:
+            return
+        
         self.update_display()
     
     def update_display(self):
@@ -242,44 +354,49 @@ class StarReductionApp:
         self.ax_original.clear()
         self.ax_final.clear()
         
-        # Afficher en couleur si disponible
-        if self.data_original_color is not None:
-            self.ax_original.imshow(self.data_original_color)
-            self.ax_final.imshow(self.image_final_display)
+        # Mode différence
+        if self.show_diff_var.get() and self.image_final is not None:
+            if self.data_original_color is not None:
+                diff = np.abs(self.data_original_color - self.image_final_display)
+            else:
+                diff = np.abs(self.image_original - self.image_final)
+            
+            self.ax_original.imshow(self.image_original if self.data_original_color is None else self.data_original_color)
+            self.ax_original.set_title('Original')
+            
+            self.ax_final.imshow(diff, cmap='hot')
+            self.ax_final.set_title('Différence (ce qui a changé)')
+        
+        # Mode fondu
+        elif self.image_final is not None:
+            blend_ratio = self.blend_var.get() / 100.0
+            
+            if self.data_original_color is not None:
+                blended = blend_ratio * self.image_final_display + (1 - blend_ratio) * self.data_original_color
+                self.ax_original.imshow(self.data_original_color)
+                self.ax_final.imshow(blended)
+            else:
+                blended = blend_ratio * self.image_final + (1 - blend_ratio) * self.image_original
+                self.ax_original.imshow(self.image_original, cmap='gray')
+                self.ax_final.imshow(blended, cmap='gray')
+            
+            self.ax_original.set_title('Image Originale')
+            num_stars = len(self.sources) if self.sources else 0
+            self.ax_final.set_title(f'Fondu {int(blend_ratio*100)}% ({num_stars} étoiles)')
+        
         else:
-            self.ax_original.imshow(self.image_original, cmap='gray')
-            self.ax_final.imshow(self.image_final, cmap='gray')
+            # Pas encore d'image finale
+            if self.data_original_color is not None:
+                self.ax_original.imshow(self.data_original_color)
+            elif self.image_original is not None:
+                self.ax_original.imshow(self.image_original, cmap='gray')
+            self.ax_original.set_title('Image Originale')
         
-        self.ax_original.set_title('Image Originale')
         self.ax_original.axis('off')
-        
-        num_stars = len(self.sources) if self.sources else 0
-        self.ax_final.set_title(f'Résultat Final ({num_stars} étoiles réduites)')
         self.ax_final.axis('off')
         
         self.fig.tight_layout()
         self.canvas.draw()
-    
-    def save_result(self):
-        """Sauvegarde le résultat"""
-        if self.image_final is None:
-            messagebox.showwarning("Attention", "Aucun résultat à sauvegarder")
-            return
-        
-        filepath = filedialog.asksaveasfilename(
-            title="Sauvegarder le résultat",
-            defaultextension=".png",
-            filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
-            initialdir="./results"
-        )
-        
-        if filepath:
-            # Sauvegarder en couleur si disponible
-            if hasattr(self, 'image_final_display') and self.data_original_color is not None:
-                plt.imsave(filepath, self.image_final_display)
-            else:
-                plt.imsave(filepath, self.image_final, cmap='gray')
-            messagebox.showinfo("Succès", f"Image sauvegardée:\n{filepath}")
 
 
 
